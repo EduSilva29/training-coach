@@ -1,1 +1,0 @@
-- **2026-11-08 (Porto - EDP Porto Marathon (Maratona do Porto))**: 42.59 km @ 4:33/km | Avg HR: 165.0 bpm
