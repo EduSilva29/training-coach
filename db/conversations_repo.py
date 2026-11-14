@@ -16,10 +16,14 @@ def save_message(role, content):
     return doc
 
 def get_chat_history(limit=50):
-    """Fetches recent chat messages in chronological order for display & AI context."""
+    """Fetches recent chat messages in chronological order for display & AI context (filters out transient error messages)."""
     col = get_conversations_collection()
-    # Fetch latest messages descending, then reverse so oldest is first
-    messages = list(col.find({}, {"_id": 0}).sort("timestamp", -1).limit(limit))
+    # Filter out any transient error strings starting with ❌ so they never pollute UI or prompts
+    cursor = col.find(
+        {"content": {"$not": {"$regex": "^❌"}}},
+        {"_id": 0}
+    ).sort("timestamp", -1).limit(limit)
+    messages = list(cursor)
     messages.reverse()
     return messages
 

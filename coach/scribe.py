@@ -61,7 +61,7 @@ ATHLETE'S NEW MESSAGE:
 """
 
         # Read model from .env (honors GEMINI_MODEL, with optional GEMINI_SCRIBE_MODEL override)
-        model_name = os.getenv("GEMINI_SCRIBE_MODEL") or os.getenv("GEMINI_MODEL", "gemini-4-hydrogen")
+        model_name = os.getenv("GEMINI_SCRIBE_MODEL") or os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 
         # Call Gemini to extract memory with guaranteed JSON output
         response = client.models.generate_content(
