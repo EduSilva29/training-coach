@@ -99,6 +99,7 @@ def format_profile_for_prompt(profile):
         f"- Target Races: {profile.get('target_races', 'None specified')}\n"
         f"- Personal Bests (PRs): {pb_text}\n"
         f"- Aches & Injury History: {profile.get('injuries_and_aches', 'None')}\n"
+        f"- Gear & Shoes: {profile.get('gear', 'Standard gear')}\n"
         f"- Preferences & Constraints: {profile.get('preferences', 'None')}"
     )
 

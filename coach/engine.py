@@ -1,4 +1,5 @@
 import os
+import threading
 from dotenv import load_dotenv
 
 # Clean package imports: We talk to the 'db' package front door
@@ -10,8 +11,9 @@ from db import (
     save_message,
 )
 
-# Relative sibling import: '.' means "look in the current folder (coach)"
+# Relative sibling imports: '.' means "look in the current folder (coach)"
 from .prompts import build_coach_system_instruction
+from .scribe import run_scribe_extraction
 
 load_dotenv()
 
@@ -92,4 +94,8 @@ def ask_coach(user_message: str) -> str:
 
     # 5. Persist coach response in MongoDB
     save_message(role="assistant", content=coach_reply)
+
+    # 6. Trigger Scribe Agent in the background (Non-blocking: saves memory facts without delaying the chat)
+    threading.Thread(target=run_scribe_extraction, args=(user_message,), daemon=True).start()
+
     return coach_reply

@@ -64,6 +64,7 @@ with st.sidebar:
             pb_marathon = st.text_input("Marathon", value=pbs.get("marathon", ""), placeholder="e.g. 3:35:00")
 
         injuries = st.text_area("Aches / Injuries / Fatigue", value=current_profile.get("injuries_and_aches", ""), height=80)
+        gear = st.text_input("Gear & Shoes", value=current_profile.get("gear", ""), placeholder="e.g. Novablast 4, Garmin HRM strap")
         preferences = st.text_area("Preferences / Constraints", value=current_profile.get("preferences", ""), height=80)
         
         submitted = st.form_submit_button("💾 Save Profile")
@@ -78,6 +79,7 @@ with st.sidebar:
                     "marathon": pb_marathon
                 },
                 "injuries_and_aches": injuries,
+                "gear": gear,
                 "preferences": preferences
             }
             update_athlete_profile(updated)
