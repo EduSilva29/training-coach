@@ -1,9 +1,11 @@
-import json
-import datetime
-import os
-from garminconnect import Garmin
-from dotenv import load_dotenv
-from pymongo import MongoClient
+import sys
+from pathlib import Path
+
+# Ensure root directory is on Python path
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
+from sync.garmin_auth import get_garmin_client
+from db.activities_repo import upsert_activity
 
 def speed_to_pace(speed_ms):
     """Converts speed in meters/second to 'MM:SS' pace per km."""
@@ -36,7 +38,6 @@ def parse_hr_zones(raw_zones):
     total_zone_secs = sum(z.get("secsInZone", 0) for z in raw_zones)
     formatted_zones = []
     
-    # Sort by zoneNumber to ensure Zone 1 -> Zone 5 order
     for z in sorted(raw_zones, key=lambda x: x.get("zoneNumber", 0)):
         secs = z.get("secsInZone", 0)
         pct = round((secs / total_zone_secs) * 100, 1) if total_zone_secs > 0 else 0.0
@@ -49,7 +50,7 @@ def parse_hr_zones(raw_zones):
     return formatted_zones
 
 def generate_llm_summary(metadata, laps):
-    """Creates a clean natural language summary for the AI agent."""
+    """Creates a natural language summary for the AI coach."""
     summary = (
         f"{metadata['activity_name']} ({metadata['activity_type']}): "
         f"{metadata['total_distance_km']} km completed in {metadata['duration_formatted']} "
@@ -58,28 +59,27 @@ def generate_llm_summary(metadata, laps):
     if metadata['average_hr']:
         summary += f"Average HR was {metadata['average_hr']} bpm (max {metadata['max_hr']} bpm). "
 
-    # Highlight the dominant heart rate zone in the text summary
     if metadata.get("hr_zones"):
         top_zone = max(metadata["hr_zones"], key=lambda z: z["percentage"])
         if top_zone["percentage"] > 0:
             summary += f"Primary effort was in Zone {top_zone['zone']} ({top_zone['percentage']}% of run). "
     
-    if metadata['total_elevation_gain']:
-        summary += f"Total elevation gain: {metadata['total_elevation_gain']}m. "
+    if metadata.get('total_elevation_gain'):
+        summary += f"Elevation gain: {metadata['total_elevation_gain']}m. "
     
     if laps:
         summary += f"Recorded across {len(laps)} laps."
     return summary
 
 def process_activity(api, activity_data):
+    """Enriches raw Garmin activity with laps, HR zones, and LLM summary."""
     activity_id = activity_data["activityId"]
     
-    # Fetch detailed lap data
+    # Fetch detailed lap and HR zone data
     raw_laps_data = api.get_activity_laps(activity_id)
-    raw_laps = raw_laps_data.get("lapDTOs", [])
+    raw_laps = raw_laps_data.get("lapDTOs", []) if isinstance(raw_laps_data, dict) else []
     raw_hr_zones = api.get_activity_hr_in_timezones(activity_id)
 
-    # Extract & convert global metadata
     dist_km = round(activity_data.get("distance", 0) / 1000, 2)
     duration_sec = activity_data.get("duration", 0)
     avg_speed = activity_data.get("averageSpeed", 0)
@@ -87,22 +87,23 @@ def process_activity(api, activity_data):
     metadata = {
         "activity_name": activity_data.get("activityName", "Untitled Run"),
         "activity_type": activity_data.get("activityType", {}).get("typeKey", "running"),
-        "start_time": activity_data.get("startTimeGMT"),
+        "start_time": activity_data.get("startTimeGMT") or activity_data.get("startTimeLocal"),
         "total_distance_km": dist_km,
         "duration_formatted": format_duration(duration_sec),
+        "duration_seconds": duration_sec,
         "average_pace_min_km": speed_to_pace(avg_speed),
         "average_hr": round(activity_data.get("averageHR", 0)) or None,
         "max_hr": round(activity_data.get("maxHR", 0)) or None,
         "hr_zones": parse_hr_zones(raw_hr_zones),
         "total_elevation_gain": round(activity_data.get("elevationGain", 0)),
-        "calories": round(activity_data.get("calories", 0))
+        "calories": round(activity_data.get("calories", 0)),
+        "aerobic_training_effect": activity_data.get("aerobicTrainingEffect"),
+        "anaerobic_training_effect": activity_data.get("anaerobicTrainingEffect")
     }
 
-    # Extract & convert lap-by-lap metrics
     processed_laps = []
     for lap in raw_laps:
         lap_dist = lap.get("distance", 0)
-        # Skip empty/zero-distance laps if any exist
         if lap_dist <= 0:
             continue
             
@@ -117,44 +118,32 @@ def process_activity(api, activity_data):
             "vertical_oscillation_cm": round(lap.get("verticalOscillation", 0), 2) or None
         })
 
-    # Assemble final MongoDB-ready document
-    clean_document = {
+    return {
         "activity_id": activity_id,
         "metadata": metadata,
         "laps": processed_laps,
         "llm_summary": generate_llm_summary(metadata, processed_laps)
     }
-    
-    return clean_document
 
-if __name__ == "__main__":
-    # Initialize and login
-    load_dotenv() 
-    MONGO_URI = os.getenv("MONGO_URI")
-    email = os.getenv("GARMIN_EMAIL")
-    password = os.getenv("GARMIN_PASSWORD")
-    api = Garmin(email, password)
-    api.login()
-    client = MongoClient(MONGO_URI)
-    db = client["running_coach"]        # Database name
-    collection = db["activities"]       # Collection name
-
-    recent_activities = api.get_activities(start=0, limit=5)
+def sync_activities(limit: int = 5):
+    """Fetches the latest activities from Garmin and upserts them to MongoDB."""
+    api = get_garmin_client()
+    activities = api.get_activities(start=0, limit=limit)
     
     synced_count = 0
-    for act in recent_activities:
-        if act.get("activityType", {}).get("typeKey") == "running":
-            act_name = act.get("activityName", "Untitled")
-            print(f"Processing and syncing: {act_name}...")
+    for act in activities:
+        act_type = act.get("activityType", {}).get("typeKey", "")
+        # You can support running or other sports as needed
+        if act_type in ["running", "trail_running", "treadmill_running", "cycling"]:
+            act_name = act.get("activityName", "Activity")
+            print(f"[Activities Sync] Processing: {act_name} (ID: {act.get('activityId')})")
             
             clean_doc = process_activity(api, act)
-            
-            # Upsert into MongoDB (inserts if new, updates if activity_id already exists)
-            collection.update_one(
-                {"activity_id": clean_doc["activity_id"]},
-                {"$set": clean_doc},
-                upsert=True
-            )
+            upsert_activity(clean_doc)
             synced_count += 1
+            
+    print(f"[Activities Sync] Completed! Synced {synced_count} activities to MongoDB.")
+    return synced_count
 
-    print(f"Successfully synced {synced_count} running activities to MongoDB Atlas!")
+if __name__ == "__main__":
+    sync_activities(limit=10)
