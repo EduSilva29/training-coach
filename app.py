@@ -35,55 +35,78 @@ with st.sidebar:
             st.metric("Sleep Score", f"{sleep_score}/100" if sleep_score else "N/A")
             st.metric("Resting HR", f"{bio.get('resting_hr', 'N/A')} bpm")
         with col2:
-            st.metric("HRV Status", hrv.get("hrv_status", "N/A"))
+            hrv_ms = hrv.get("last_night_avg_ms")
+            hrv_status = hrv.get("hrv_status", "N/A")
+            st.metric("Overnight HRV", f"{hrv_ms} ms" if hrv_ms else "N/A", help=f"Garmin HRV Status: {hrv_status}")
             st.metric("Sleep Hours", f"{sleep.get('sleep_duration_hours', 'N/A')}h")
 
-        st.caption(f"Last synced for: **{recovery.get('calendar_date', 'Unknown')}**")
+        st.caption(f"HRV Status: **{hrv_status}** • Synced: **{recovery.get('calendar_date', 'Unknown')}**")
     else:
         st.info("No recovery data found yet. Run `python sync/sync_recovery.py` to fetch your metrics.")
 
     st.divider()
 
     # Section B: Athlete Objectives & Injury Tracking
-    st.subheader("🎯 Athlete Goals & Status")
+    st.subheader("🎯 Athlete Profile & Status")
     current_profile = get_athlete_profile()
 
-    with st.form("profile_form"):
-        goal = st.text_input("Primary Goal", value=current_profile.get("goal", ""))
-        races = st.text_input("Target Races", value=current_profile.get("target_races", ""))
-        
-        # Personal Bests section
-        st.markdown("**⚡ Personal Bests (PRs)**")
-        pbs = current_profile.get("personal_bests", {})
-        pb_col1, pb_col2 = st.columns(2)
-        with pb_col1:
-            pb_5k = st.text_input("5K", value=pbs.get("5k", ""), placeholder="e.g. 21:30")
-            pb_10k = st.text_input("10K", value=pbs.get("10k", ""), placeholder="e.g. 44:50")
-        with pb_col2:
-            pb_hm = st.text_input("Half Marathon", value=pbs.get("half_marathon", ""), placeholder="e.g. 1:40:00")
-            pb_marathon = st.text_input("Marathon", value=pbs.get("marathon", ""), placeholder="e.g. 3:35:00")
+    # 1. Clean Display View (Text wraps naturally, no cut-offs!)
+    with st.container():
+        st.markdown(f"**🎯 Goal:** {current_profile.get('goal', 'None')}")
+        st.markdown(f"**🏁 Target Races:** {current_profile.get('target_races', 'None')}")
 
-        injuries = st.text_area("Aches / Injuries / Fatigue", value=current_profile.get("injuries_and_aches", ""), height=80)
-        gear = st.text_input("Gear & Shoes", value=current_profile.get("gear", ""), placeholder="e.g. Novablast 4, Garmin HRM strap")
-        preferences = st.text_area("Preferences / Constraints", value=current_profile.get("preferences", ""), height=80)
+        pbs = current_profile.get("personal_bests", {})
+        pb_items = []
+        if pbs.get("5k"): pb_items.append(f"**5K:** {pbs['5k']}")
+        if pbs.get("10k"): pb_items.append(f"**10K:** {pbs['10k']}")
+        if pbs.get("half_marathon"): pb_items.append(f"**HM:** {pbs['half_marathon']}")
+        if pbs.get("marathon"): pb_items.append(f"**M:** {pbs['marathon']}")
         
-        submitted = st.form_submit_button("💾 Save Profile")
-        if submitted:
-            updated = {
-                "goal": goal,
-                "target_races": races,
-                "personal_bests": {
-                    "5k": pb_5k,
-                    "10k": pb_10k,
-                    "half_marathon": pb_hm,
-                    "marathon": pb_marathon
-                },
-                "injuries_and_aches": injuries,
-                "gear": gear,
-                "preferences": preferences
-            }
-            update_athlete_profile(updated)
-            st.success("Coach notes updated!")
+        if pb_items:
+            st.markdown(f"⚡ **PRs:** {' • '.join(pb_items)}")
+
+        st.markdown(f"**🩹 Aches / Status:** {current_profile.get('injuries_and_aches', 'None')}")
+        st.markdown(f"**👟 Gear:** {current_profile.get('gear', 'None')}")
+        st.markdown(f"**🗓️ Preferences:** {current_profile.get('preferences', 'None')}")
+
+    # 2. Collapsible Edit Form (Expands only when you want to change something)
+    with st.expander("✏️ Edit Profile Manually"):
+        with st.form("profile_form"):
+            goal = st.text_area("Primary Goal", value=current_profile.get("goal", ""), height=68)
+            races = st.text_area("Target Races", value=current_profile.get("target_races", ""), height=68)
+            
+            # Personal Bests section
+            st.markdown("**⚡ Personal Bests (PRs)**")
+            pb_col1, pb_col2 = st.columns(2)
+            with pb_col1:
+                pb_5k = st.text_input("5K", value=pbs.get("5k", ""), placeholder="e.g. 18:39")
+                pb_10k = st.text_input("10K", value=pbs.get("10k", ""), placeholder="e.g. 37:54")
+            with pb_col2:
+                pb_hm = st.text_input("Half Marathon", value=pbs.get("half_marathon", ""), placeholder="e.g. 1:24:22")
+                pb_marathon = st.text_input("Marathon", value=pbs.get("marathon", ""), placeholder="e.g. 3:14:25")
+
+            injuries = st.text_area("Aches / Injuries / Fatigue", value=current_profile.get("injuries_and_aches", ""), height=75)
+            gear = st.text_area("Gear & Shoes", value=current_profile.get("gear", ""), height=68, placeholder="e.g. Novablast 5")
+            preferences = st.text_area("Preferences / Constraints", value=current_profile.get("preferences", ""), height=80)
+            
+            submitted = st.form_submit_button("💾 Save Changes")
+            if submitted:
+                updated = {
+                    "goal": goal,
+                    "target_races": races,
+                    "personal_bests": {
+                        "5k": pb_5k,
+                        "10k": pb_10k,
+                        "half_marathon": pb_hm,
+                        "marathon": pb_marathon
+                    },
+                    "injuries_and_aches": injuries,
+                    "gear": gear,
+                    "preferences": preferences
+                }
+                update_athlete_profile(updated)
+                st.success("Profile updated!")
+                st.rerun()
 
     st.divider()
 
