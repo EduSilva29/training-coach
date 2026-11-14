@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 # Clean package imports: We talk to the 'db' package front door
 from db import (
     get_athlete_profile,
-    get_latest_recovery,
+    get_recent_recovery_history,
     get_recent_activities,
     get_chat_history,
     save_message,
@@ -49,16 +49,16 @@ def ask_coach(user_message: str) -> str:
         save_message(role="assistant", content=fallback_msg)
         return fallback_msg
 
-    # 1. Fetch context data from MongoDB
+    # 1. Fetch multi-week context data from MongoDB
     profile = get_athlete_profile()
-    latest_recovery = get_latest_recovery()
-    recent_activities = get_recent_activities(limit=7)
+    recovery_history = get_recent_recovery_history(limit=30)  # Last 30 days of sleep & HRV trends
+    recent_activities = get_recent_activities(limit=30)       # Last 30 workouts
 
-    # 2. Build system instruction
-    system_instruction = build_coach_system_instruction(profile, latest_recovery, recent_activities)
+    # 2. Build system instruction with full 30-day training history
+    system_instruction = build_coach_system_instruction(profile, recovery_history, recent_activities)
 
-    # 3. Retrieve past conversation history (last 20 turns)
-    chat_history = get_chat_history(limit=20)
+    # 3. Retrieve extended conversation history (last 100 messages)
+    chat_history = get_chat_history(limit=100)
     
     # Format messages for Gemini
     formatted_contents = []

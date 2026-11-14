@@ -1,14 +1,19 @@
 import json
 
 def format_activities_for_prompt(activities):
-    """Formats activities into a clean readable log for the LLM."""
+    """Formats up to 30 activities into a rich chronological training log."""
     if not activities:
         return "No recent activities recorded in the database yet."
 
-    lines = []
+    total_km = round(sum(a.get("metadata", {}).get("total_distance_km", 0) for a in activities), 1)
+
+    lines = [
+        f"TOTAL RECORDED MILEAGE (Across last {len(activities)} activities): {total_km} km",
+        "--- ACTIVITIES LOG (Newest to Oldest) ---"
+    ]
     for act in activities:
         meta = act.get("metadata", {})
-        date_str = meta.get("start_time", "Unknown date")[:10]
+        date_str = (meta.get("start_time") or "Unknown date")[:10]
         name = meta.get("activity_name", "Run")
         dist = meta.get("total_distance_km", 0)
         pace = meta.get("average_pace_min_km", "--:--")
@@ -29,22 +34,45 @@ def format_activities_for_prompt(activities):
     
     return "\n".join(lines)
 
-def format_recovery_for_prompt(recovery):
-    """Formats today's recovery metrics for the LLM."""
-    if not recovery:
-        return "No recovery data recorded for today yet."
+def format_recovery_for_prompt(recovery_input):
+    """Formats up to 30 days of recovery and biometrics history for trend analysis."""
+    if not recovery_input:
+        return "No recovery data recorded in the database yet."
 
-    sleep = recovery.get("sleep", {})
-    hrv = recovery.get("hrv", {})
-    bio = recovery.get("biometrics", {})
+    # Normalize to a list in case a single day doc is passed
+    recovery_list = recovery_input if isinstance(recovery_input, list) else [recovery_input]
+    if not recovery_list:
+        return "No recovery data recorded in the database yet."
+
+    today = recovery_list[0]
+    today_sleep = today.get("sleep", {})
+    today_hrv = today.get("hrv", {})
+    today_bio = today.get("biometrics", {})
 
     lines = [
-        f"- Date: {recovery.get('calendar_date', 'Today')}",
-        f"- Sleep: {sleep.get('sleep_score', 'N/A')}/100 ({sleep.get('sleep_duration_hours', 'N/A')} hours, qualifier: {sleep.get('sleep_qualifier', 'normal')})",
-        f"- Overnight HRV Status: {hrv.get('hrv_status', 'N/A')} (Last night avg: {hrv.get('last_night_avg_ms', 'N/A')} ms, Weekly avg: {hrv.get('weekly_avg_ms', 'N/A')} ms)",
-        f"- Resting Heart Rate: {bio.get('resting_hr', 'N/A')} bpm",
-        f"- Average Daily Stress: {bio.get('avg_stress_level', 'N/A')}/100"
+        "--- TODAY'S LATEST READINESS ---",
+        f"- Date: {today.get('calendar_date', 'Most Recent')}",
+        f"- Sleep: {today_sleep.get('sleep_score', 'N/A')}/100 ({today_sleep.get('sleep_duration_hours', 'N/A')} hours, qualifier: {today_sleep.get('sleep_qualifier', 'normal')})",
+        f"- Overnight HRV: {today_hrv.get('hrv_status', 'N/A')} (Last night: {today_hrv.get('last_night_avg_ms', 'N/A')} ms, 7-day baseline: {today_hrv.get('weekly_avg_ms', 'N/A')} ms)",
+        f"- Resting Heart Rate: {today_bio.get('resting_hr', 'N/A')} bpm",
+        f"- Daily Stress: {today_bio.get('avg_stress_level', 'N/A')}/100",
+        "",
+        f"--- 30-DAY BIOMETRIC & RECOVERY LOG (Last {len(recovery_list)} Days, Newest to Oldest) ---"
     ]
+
+    for rec in recovery_list:
+        date = rec.get("calendar_date", "Unknown")
+        s = rec.get("sleep", {})
+        h = rec.get("hrv", {})
+        b = rec.get("biometrics", {})
+        
+        score = s.get("sleep_score", "--")
+        hours = s.get("sleep_duration_hours", "--")
+        hrv_st = h.get("hrv_status", "--")
+        last_night_hrv = h.get("last_night_avg_ms", "--")
+        rhr = b.get("resting_hr", "--")
+        lines.append(f"- [{date}] Sleep: {score}/100 ({hours}h) | HRV: {hrv_st} ({last_night_hrv}ms) | Resting HR: {rhr} bpm")
+
     return "\n".join(lines)
 
 def format_profile_for_prompt(profile):
@@ -86,17 +114,18 @@ You are coaching an athlete on a 1-on-1 basis. Your coaching style is encouragin
 ATHLETE PROFILE & OBJECTIVES:
 {profile_text}
 
-LATEST RECOVERY & BIOMETRICS:
+RECOVERY & BIOMETRICS (Today + 30-Day Trends):
 {recovery_text}
 
-RECENT GARMIN ACTIVITIES (Newest First):
+GARMIN ACTIVITIES LOG (Up to Last 30 Workouts):
 {activities_text}
 
 COACHING GUIDELINES:
-1. Always factor in recent fatigue and recovery status: If HRV is low or sleep is poor, recommend dialing back intensity or taking an active recovery run.
-2. Monitor training load: Be mindful of sudden mileage jumps (the 10% rule) and excessive high-intensity time in Zones 4/5.
-3. Calibrate workouts to their Personal Bests: Use their 5K, 10K, or Half Marathon PBs to prescribe accurate training paces (e.g. threshold pace, VO2 max interval pace, and true easy/recovery pace).
-4. Be conversational and direct: Do not produce giant walls of generic text. Give direct answers with specific recommendations (e.g. target paces, heart rate zones, distances, or rest instructions).
-5. Reference their actual metrics: Mention their real runs, recent paces, and recovery scores when explaining the "why" behind your advice.
-6. If the athlete mentions feeling pain or tightness, prioritize injury prevention over hitting a workout target.
+1. Multi-week trend analysis: Use the 30-day activity log and biometric recovery history to assess acute vs. chronic training load (ACWR), overall weekly mileage progression, and resting heart rate baseline shifts.
+2. Factor in fatigue & autonomic stress: If HRV is low or sleep has been consistently poor over recent days, recommend dialing back intensity or inserting a recovery run.
+3. Monitor training load: Be mindful of sudden mileage jumps (the 10% rule) and excessive high-intensity time in Zones 4/5.
+4. Calibrate workouts to their Personal Bests: Use their 5K, 10K, or Half Marathon PBs to prescribe accurate training paces (e.g. threshold pace, VO2 max interval pace, and true easy/recovery pace).
+5. Be conversational and direct: Do not produce giant walls of generic text. Give direct answers with specific recommendations (e.g. target paces, heart rate zones, distances, or rest instructions).
+6. Reference their actual metrics: Mention their real runs, recent paces, and recovery scores when explaining the "why" behind your advice.
+7. Long-term memory: Always remember past aches, ongoing niggles, and target races mentioned across the conversation history. If the athlete mentions feeling pain, prioritize injury prevention over hitting a workout target.
 """

@@ -95,8 +95,8 @@ with st.sidebar:
 st.title("💬 Chat with Your Coach")
 st.caption("Powered by Garmin Connect Biometrics + Google Gemini Flash (100% Free)")
 
-# Load persistent conversation history from MongoDB
-db_messages = get_chat_history(limit=50)
+# Load persistent conversation history from MongoDB (Last 100 messages)
+db_messages = get_chat_history(limit=100)
 
 # If no messages in DB, display a welcoming prompt
 if not db_messages:
