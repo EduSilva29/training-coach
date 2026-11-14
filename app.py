@@ -48,6 +48,18 @@ with st.sidebar:
     with st.form("profile_form"):
         goal = st.text_input("Primary Goal", value=current_profile.get("goal", ""))
         races = st.text_input("Target Races", value=current_profile.get("target_races", ""))
+        
+        # Personal Bests section
+        st.markdown("**⚡ Personal Bests (PRs)**")
+        pbs = current_profile.get("personal_bests", {})
+        pb_col1, pb_col2 = st.columns(2)
+        with pb_col1:
+            pb_5k = st.text_input("5K", value=pbs.get("5k", ""), placeholder="e.g. 21:30")
+            pb_10k = st.text_input("10K", value=pbs.get("10k", ""), placeholder="e.g. 44:50")
+        with pb_col2:
+            pb_hm = st.text_input("Half Marathon", value=pbs.get("half_marathon", ""), placeholder="e.g. 1:40:00")
+            pb_marathon = st.text_input("Marathon", value=pbs.get("marathon", ""), placeholder="e.g. 3:35:00")
+
         injuries = st.text_area("Aches / Injuries / Fatigue", value=current_profile.get("injuries_and_aches", ""), height=80)
         preferences = st.text_area("Preferences / Constraints", value=current_profile.get("preferences", ""), height=80)
         
@@ -56,6 +68,12 @@ with st.sidebar:
             updated = {
                 "goal": goal,
                 "target_races": races,
+                "personal_bests": {
+                    "5k": pb_5k,
+                    "10k": pb_10k,
+                    "half_marathon": pb_hm,
+                    "marathon": pb_marathon
+                },
                 "injuries_and_aches": injuries,
                 "preferences": preferences
             }

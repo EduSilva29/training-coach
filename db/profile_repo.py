@@ -5,7 +5,13 @@ DEFAULT_PROFILE = {
     "goal": "Prepare for target race without injury. Improve aerobic threshold and consistency.",
     "target_races": "10k (Sub-40 min target) / Half Marathon",
     "injuries_and_aches": "None currently. Keep an eye on calves after speed sessions.",
-    "preferences": "Prefer long runs on weekends. Easy runs should stay strictly Zone 2."
+    "preferences": "Prefer long runs on weekends. Easy runs should stay strictly Zone 2.",
+    "personal_bests": {
+        "5k": "",
+        "10k": "",
+        "half_marathon": "",
+        "marathon": ""
+    }
 }
 
 def get_profile_collection():

@@ -39,13 +39,11 @@ def get_garmin_client(token_dir: str = DEFAULT_TOKEN_DIR) -> Garmin:
 
     try:
         print(f"[Garmin Auth] Logging in with email: {email}...")
-        client = Garmin(email=email, password=password)
-        client.login()
-
-        # Cache tokens for future runs
         token_path.mkdir(parents=True, exist_ok=True)
-        client.garth.dump(str(token_path))
-        print(f"[Garmin Auth] New session tokens saved to {token_path}.")
+        client = Garmin(email=email, password=password)
+        # In garminconnect 0.3+, passing token_path automatically caches session tokens
+        client.login(str(token_path))
+        print(f"[Garmin Auth] Logged in and session tokens cached in {token_path}.")
         return client
 
     except (GarminConnectConnectionError, GarminConnectAuthenticationError, GarminConnectTooManyRequestsError) as err:

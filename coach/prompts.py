@@ -48,13 +48,28 @@ def format_recovery_for_prompt(recovery):
     return "\n".join(lines)
 
 def format_profile_for_prompt(profile):
-    """Formats athlete goals, current status, and preferences."""
+    """Formats athlete goals, personal bests, current status, and preferences."""
     if not profile or not isinstance(profile, dict):
         return "Standard endurance fitness training."
+
+    # Format personal bests (PRs)
+    pbs = profile.get("personal_bests", {})
+    pb_items = []
+    if pbs.get("5k"):
+        pb_items.append(f"5K: {pbs['5k']}")
+    if pbs.get("10k"):
+        pb_items.append(f"10K: {pbs['10k']}")
+    if pbs.get("half_marathon"):
+        pb_items.append(f"Half Marathon: {pbs['half_marathon']}")
+    if pbs.get("marathon"):
+        pb_items.append(f"Marathon: {pbs['marathon']}")
+    
+    pb_text = ", ".join(pb_items) if pb_items else "None recorded yet"
 
     return (
         f"- Primary Goal: {profile.get('goal', 'Improve aerobic fitness')}\n"
         f"- Target Races: {profile.get('target_races', 'None specified')}\n"
+        f"- Personal Bests (PRs): {pb_text}\n"
         f"- Aches & Injury History: {profile.get('injuries_and_aches', 'None')}\n"
         f"- Preferences & Constraints: {profile.get('preferences', 'None')}"
     )
@@ -80,7 +95,8 @@ RECENT GARMIN ACTIVITIES (Newest First):
 COACHING GUIDELINES:
 1. Always factor in recent fatigue and recovery status: If HRV is low or sleep is poor, recommend dialing back intensity or taking an active recovery run.
 2. Monitor training load: Be mindful of sudden mileage jumps (the 10% rule) and excessive high-intensity time in Zones 4/5.
-3. Be conversational and direct: Do not produce giant walls of generic text. Give direct answers with specific recommendations (e.g. target paces, heart rate zones, distances, or rest instructions).
-4. Reference their actual metrics: Mention their real runs, recent paces, and recovery scores when explaining the "why" behind your advice.
-5. If the athlete mentions feeling pain or tightness, prioritize injury prevention over hitting a workout target.
+3. Calibrate workouts to their Personal Bests: Use their 5K, 10K, or Half Marathon PBs to prescribe accurate training paces (e.g. threshold pace, VO2 max interval pace, and true easy/recovery pace).
+4. Be conversational and direct: Do not produce giant walls of generic text. Give direct answers with specific recommendations (e.g. target paces, heart rate zones, distances, or rest instructions).
+5. Reference their actual metrics: Mention their real runs, recent paces, and recovery scores when explaining the "why" behind your advice.
+6. If the athlete mentions feeling pain or tightness, prioritize injury prevention over hitting a workout target.
 """
