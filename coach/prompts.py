@@ -1,26 +1,54 @@
 import json
 
 def format_activities_for_prompt(activities):
-    """Formats up to 30 activities into a rich chronological training log."""
+    """Formats up to 30 activities into a rich chronological training log, distinguishing running vs. cycling."""
     if not activities:
         return "No recent activities recorded in the database yet."
 
-    total_km = round(sum(a.get("metadata", {}).get("total_distance_km", 0) for a in activities), 1)
+    # Separate running vs. cross-training volume
+    runs = [a for a in activities if a.get("metadata", {}).get("sport_category") == "running" or "run" in a.get("metadata", {}).get("activity_type", "")]
+    bikes = [a for a in activities if a.get("metadata", {}).get("sport_category") == "cycling" or "cycl" in a.get("metadata", {}).get("activity_type", "") or "bike" in a.get("metadata", {}).get("activity_type", "")]
+
+    run_km = round(sum(a.get("metadata", {}).get("total_distance_km", 0) for a in runs), 1)
+    bike_km = round(sum(a.get("metadata", {}).get("total_distance_km", 0) for a in bikes), 1)
 
     lines = [
-        f"TOTAL RECORDED MILEAGE (Across last {len(activities)} activities): {total_km} km",
+        f"TOTAL TRAINING VOLUME (Across last {len(activities)} activities):",
+        f"- 🏃 Running Volume: {run_km} km ({len(runs)} runs)",
+        f"- 🚴 Cross-Training (Indoor Bike / Cycling): {bike_km} km ({len(bikes)} sessions)",
+        "",
         "--- ACTIVITIES LOG (Newest to Oldest) ---"
     ]
+
     for act in activities:
         meta = act.get("metadata", {})
         date_str = (meta.get("start_time") or "Unknown date")[:10]
-        name = meta.get("activity_name", "Run")
+        name = meta.get("activity_name", "Activity")
         dist = meta.get("total_distance_km", 0)
-        pace = meta.get("average_pace_min_km", "--:--")
         duration = meta.get("duration_formatted", "--:--")
         avg_hr = meta.get("average_hr", "--")
-        
-        # Dominant zone
+        is_cycling = meta.get("sport_category") == "cycling" or "cycl" in meta.get("activity_type", "") or "bike" in meta.get("activity_type", "")
+
+        # Sport label and sport-specific metrics
+        if is_cycling:
+            tag = "[CROSS-TRAIN / BIKE]"
+            speed_val = meta.get("speed_kmh", 0)
+            power_val = meta.get("average_power_watts")
+            cadence_val = meta.get("cadence")
+            perf_str = f"Speed: {speed_val} km/h"
+            if power_val:
+                perf_str += f", Avg Power: {power_val}W"
+            if cadence_val:
+                perf_str += f", Cadence: {cadence_val} rpm"
+        else:
+            tag = "[RUN]"
+            pace_val = meta.get("average_pace_min_km", "--:--")
+            cadence_val = meta.get("cadence")
+            perf_str = f"Pace: {pace_val}/km"
+            if cadence_val:
+                perf_str += f", Cadence: {cadence_val} spm"
+
+        # Dominant HR zone
         zones = meta.get("hr_zones", [])
         top_zone_str = ""
         if zones:
@@ -28,7 +56,7 @@ def format_activities_for_prompt(activities):
             if top_z.get("percentage", 0) > 0:
                 top_zone_str = f" | Top: Zone {top_z.get('zone')} ({top_z.get('percentage')}%)"
 
-        lines.append(f"- [{date_str}] {name}: {dist}km in {duration} (Pace: {pace}/km, Avg HR: {avg_hr} bpm{top_zone_str})")
+        lines.append(f"- [{date_str}] {tag} {name}: {dist}km in {duration} ({perf_str}, Avg HR: {avg_hr} bpm{top_zone_str})")
         if act.get("llm_summary"):
             lines.append(f"  Summary: {act['llm_summary']}")
     
@@ -129,4 +157,5 @@ COACHING GUIDELINES:
 5. Be conversational and direct: Do not produce giant walls of generic text. Give direct answers with specific recommendations (e.g. target paces, heart rate zones, distances, or rest instructions).
 6. Reference their actual metrics: Mention their real runs, recent paces, and recovery scores when explaining the "why" behind your advice.
 7. Long-term memory: Always remember past aches, ongoing niggles, and target races mentioned across the conversation history. If the athlete mentions feeling pain, prioritize injury prevention over hitting a workout target.
+8. Cross-Training & Indoor Cycling: Treat indoor bike/trainer sessions as non-impact aerobic conditioning and active recovery. Cycling builds mitochondrial density, capillary beds, and aerobic base with zero bone/tendon pounding. NEVER combine cycling kilometers directly into running mileage when assessing weekly running progression (the 10% rule), but DO consider the heart rate zones and cardiovascular fatigue when planning upcoming running workouts.
 """

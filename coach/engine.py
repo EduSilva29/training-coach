@@ -54,13 +54,13 @@ def ask_coach(user_message: str) -> str:
     # 1. Fetch multi-week context data from MongoDB
     profile = get_athlete_profile()
     recovery_history = get_recent_recovery_history(limit=30)  # Last 30 days of sleep & HRV trends
-    recent_activities = get_recent_activities(limit=30)       # Last 30 workouts
+    recent_activities = get_recent_activities(limit=20)       # Last 20 workouts
 
     # 2. Build system instruction with full 30-day training history
     system_instruction = build_coach_system_instruction(profile, recovery_history, recent_activities)
 
-    # 3. Retrieve extended conversation history (last 100 messages)
-    chat_history = get_chat_history(limit=100)
+    # 3. Retrieve extended conversation history (last 50 messages)
+    chat_history = get_chat_history(limit=50)
     
     # Format messages for Gemini
     formatted_contents = []
