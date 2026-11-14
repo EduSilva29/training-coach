@@ -1,10 +1,13 @@
 import streamlit as st
 import datetime
-from db.conversations_repo import get_chat_history, clear_chat_history
-from db.profile_repo import get_athlete_profile, update_athlete_profile
-from db.recovery_repo import get_latest_recovery
-from db.activities_repo import get_recent_activities
-from coach.engine import ask_coach
+from db import (
+    get_chat_history,
+    clear_chat_history,
+    get_athlete_profile,
+    update_athlete_profile,
+    get_latest_recovery,
+)
+from coach import ask_coach
 
 # 1. Page Configuration
 st.set_page_config(

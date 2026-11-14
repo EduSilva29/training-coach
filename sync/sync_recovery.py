@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from sync.garmin_auth import get_garmin_client
-from db.recovery_repo import upsert_daily_recovery
+from db import upsert_daily_recovery
 
 def parse_sleep_data(raw_sleep):
     """Safely extracts sleep score and duration from Garmin sleep DTO."""

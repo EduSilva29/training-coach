@@ -1,10 +1,17 @@
 import os
 from dotenv import load_dotenv
-from db.profile_repo import get_athlete_profile
-from db.recovery_repo import get_latest_recovery
-from db.activities_repo import get_recent_activities
-from db.conversations_repo import get_chat_history, save_message
-from coach.prompts import build_coach_system_instruction
+
+# Clean package imports: We talk to the 'db' package front door
+from db import (
+    get_athlete_profile,
+    get_latest_recovery,
+    get_recent_activities,
+    get_chat_history,
+    save_message,
+)
+
+# Relative sibling import: '.' means "look in the current folder (coach)"
+from .prompts import build_coach_system_instruction
 
 load_dotenv()
 

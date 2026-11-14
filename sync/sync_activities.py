@@ -5,7 +5,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from sync.garmin_auth import get_garmin_client
-from db.activities_repo import upsert_activity
+from db import upsert_activity
 
 def speed_to_pace(speed_ms):
     """Converts speed in meters/second to 'MM:SS' pace per km."""
