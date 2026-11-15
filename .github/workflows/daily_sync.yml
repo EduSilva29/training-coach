@@ -3,7 +3,7 @@ name: Daily Garmin Sync
 on:
   schedule:
     # Runs everyday at 06:00 UTC (adjust to your local morning time)
-    - cron: '0 6 * * *'
+    - cron: '0 13 * * *'
   workflow_dispatch: # Allows manual trigger from GitHub UI
 
 jobs:
