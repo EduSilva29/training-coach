@@ -34,9 +34,6 @@ def ask_coach(user_message: str) -> str:
     Main entry point for talking to the AI coach.
     Includes automatic retry and fallback if Google experiences a 503 high-demand spike.
     """
-    # Save user message to DB
-    save_message(role="user", content=user_message)
-
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         fallback_msg = (
@@ -54,8 +51,8 @@ def ask_coach(user_message: str) -> str:
     # 2. Build system instruction with full 30-day training history
     system_instruction = build_coach_system_instruction(profile, recovery_history, recent_activities)
 
-    # 3. Retrieve extended conversation history (last 50 messages)
-    chat_history = get_chat_history(limit=50)
+    # 3. Retrieve prior conversation history, leaving room for the current message
+    chat_history = get_chat_history(limit=49)
     
     # Format messages for Gemini (cleanly skipping any prior error messages)
     formatted_contents = []
@@ -66,6 +63,8 @@ def ask_coach(user_message: str) -> str:
             continue
         role = "user" if msg["role"] == "user" else "model"
         formatted_contents.append({"role": role, "parts": [{"text": content}]})
+
+    formatted_contents.append({"role": "user", "parts": [{"text": user_message}]})
 
     # 4. Call Gemini with Auto-Retry and Fallback
     from google import genai
@@ -120,6 +119,7 @@ def ask_coach(user_message: str) -> str:
 
     # 5. Persist only successful coach replies to MongoDB
     if coach_reply:
+        save_message(role="user", content=user_message)
         save_message(role="assistant", content=coach_reply)
         # 6. Trigger Scribe Agent in background
         threading.Thread(target=run_scribe_extraction, args=(user_message,), daemon=True).start()
