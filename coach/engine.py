@@ -43,12 +43,12 @@ def ask_coach(user_message: str) -> str:
         )
         return fallback_msg
 
-    # 1. Fetch multi-week context data from MongoDB
+    # 1. Fetch five-week activity context plus recent recovery data from MongoDB
     profile = get_athlete_profile()
     recovery_history = get_recent_recovery_history(limit=30)  # Last 30 days of sleep & HRV trends
-    recent_activities = get_recent_activities(limit=20)       # Last 20 workouts (~1 month training block)
+    recent_activities = get_recent_activities(limit=100)      # Summarized into five ISO weeks plus recent workout detail
 
-    # 2. Build system instruction with full 30-day training history
+    # 2. Build a compact system instruction with weekly training trends
     system_instruction = build_coach_system_instruction(profile, recovery_history, recent_activities)
 
     # 3. Retrieve prior conversation history, leaving room for the current message

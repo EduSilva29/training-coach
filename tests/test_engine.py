@@ -61,6 +61,7 @@ class AskCoachTests(unittest.TestCase):
             result = engine.ask_coach("What should I run today?")
 
         self.assertEqual(result, "Coach reply")
+        engine.get_recent_activities.assert_called_once_with(limit=100)
         self.assertEqual(save_message.call_args_list, [
             call(role="user", content="What should I run today?"),
             call(role="assistant", content="Coach reply"),
