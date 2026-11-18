@@ -1,6 +1,6 @@
 # 🏃 AI Endurance Training Coach
 
-A modular, **100% free** AI training coach powered by **Garmin Connect** biometric data, **MongoDB Atlas**, **Streamlit**, and **Google Gemini Flash**.
+A modular, **100% free** AI training coach powered by **Garmin Connect** biometric data, **MongoDB Atlas**, **Streamlit**, and **Google Gemini**.
 
 ---
 
@@ -27,7 +27,7 @@ training-coach/
 │
 ├── coach/                    # AI REASONING LAYER
 │   ├── prompts.py            # Formats biometric metrics into coach instructions
-│   └── engine.py             # Context assembler & Gemini Flash API client
+│   └── engine.py             # Context assembler & Gemini API client with congestion fallback
 │
 ├── app.py                    # PRESENTATION LAYER (Streamlit Web UI)
 ├── requirements.txt          # Python dependencies
@@ -68,6 +68,9 @@ python sync/sync_recovery.py
 ```bash
 streamlit run app.py
 ```
+The coach tries the configured `GEMINI_MODEL` first (default: `gemini-4-hydrogen`). If
+that model is congested, it immediately tries `gemini-3.8-flash`; the UI displays the
+model used for each response.
 
 ---
 

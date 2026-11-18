@@ -22,7 +22,6 @@ class AskCoachTests(unittest.TestCase):
             patch.object(engine, "build_coach_system_instruction", return_value="system"),
             patch.object(engine, "run_scribe_extraction"),
             patch.object(engine.threading, "Thread"),
-            patch.object(engine.time, "sleep"),
             patch("google.genai.Client"),
         ]
         self.mocks = [patcher.start() for patcher in self.patches]
@@ -35,17 +34,21 @@ class AskCoachTests(unittest.TestCase):
         for patcher in reversed(self.patches):
             patcher.stop()
 
-    def test_busy_model_does_not_persist_user_message(self):
+    def test_busy_models_do_not_persist_user_message(self):
         self.client.models.generate_content.side_effect = [
-            RuntimeError("503 unavailable"),
             RuntimeError("503 unavailable"),
             RuntimeError("503 unavailable"),
         ]
 
         with patch("builtins.print"), patch.object(engine, "save_message") as save_message:
-            result = engine.ask_coach("What should I run today?")
+            result, model = engine.ask_coach("What should I run today?")
 
         save_message.assert_not_called()
+        self.assertIsNone(model)
+        self.assertEqual(
+            [call.kwargs["model"] for call in self.client.models.generate_content.call_args_list],
+            ["primary-model", "gemini-3.8-flash"],
+        )
         self.get_chat_history.assert_called_once_with(limit=49)
         contents = self.client.models.generate_content.call_args_list[0].kwargs["contents"]
         self.assertEqual(contents[-1], {
@@ -58,14 +61,34 @@ class AskCoachTests(unittest.TestCase):
         self.client.models.generate_content.return_value = SimpleNamespace(text="Coach reply")
 
         with patch.object(engine, "save_message") as save_message:
-            result = engine.ask_coach("What should I run today?")
+            result, model = engine.ask_coach("What should I run today?")
 
-        self.assertEqual(result, "Coach reply")
+        self.assertEqual((result, model), ("Coach reply", "primary-model"))
+        self.client.models.generate_content.assert_called_once()
         engine.get_recent_activities.assert_called_once_with(limit=100)
         self.assertEqual(save_message.call_args_list, [
             call(role="user", content="What should I run today?"),
-            call(role="assistant", content="Coach reply"),
+            call(role="assistant", content="Coach reply", model="primary-model"),
         ])
+
+    def test_congested_primary_uses_backup_without_retrying_primary(self):
+        self.client.models.generate_content.side_effect = [
+            RuntimeError("503 unavailable"),
+            SimpleNamespace(text="Backup reply"),
+        ]
+
+        with patch("builtins.print"), patch.object(engine, "save_message") as save_message:
+            result = engine.ask_coach("What should I run today?")
+
+        self.assertEqual(result, ("Backup reply", "gemini-3.8-flash"))
+        self.assertEqual(
+            [call.kwargs["model"] for call in self.client.models.generate_content.call_args_list],
+            ["primary-model", "gemini-3.8-flash"],
+        )
+        self.assertEqual(
+            save_message.call_args_list[-1],
+            call(role="assistant", content="Backup reply", model="gemini-3.8-flash"),
+        )
 
 
 if __name__ == "__main__":

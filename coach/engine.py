@@ -1,6 +1,6 @@
 import os
-import time
 import threading
+from typing import Optional, Tuple
 from dotenv import load_dotenv
 
 # Clean package imports: We talk to the 'db' package front door
@@ -29,10 +29,10 @@ def get_gemini_client():
     except ImportError:
         return None
 
-def ask_coach(user_message: str) -> str:
+def ask_coach(user_message: str) -> Tuple[str, Optional[str]]:
     """
     Main entry point for talking to the AI coach.
-    Includes automatic retry and fallback if Google experiences a 503 high-demand spike.
+    Falls back to a backup model if Google experiences a 503 high-demand spike.
     """
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
@@ -41,7 +41,7 @@ def ask_coach(user_message: str) -> str:
             "Please create a free API key at [Google AI Studio](https://aistudio.google.com/) "
             "and add `GEMINI_API_KEY=your_key_here` to your `.env` file or Streamlit secrets."
         )
-        return fallback_msg
+        return fallback_msg, None
 
     # 1. Fetch five-week activity context plus recent recovery data from MongoDB
     profile = get_athlete_profile()
@@ -66,7 +66,7 @@ def ask_coach(user_message: str) -> str:
 
     formatted_contents.append({"role": "user", "parts": [{"text": user_message}]})
 
-    # 4. Call Gemini with Auto-Retry and Fallback
+    # 4. Call Gemini, falling back immediately if the primary model is congested
     from google import genai
     from google.genai import types
 
@@ -75,35 +75,27 @@ def ask_coach(user_message: str) -> str:
     fallback_model = "gemini-3.8-flash"
 
     coach_reply = None
+    model_used = None
     last_error = None
 
-    # Step A: Try primary model with 1 auto-retry on 503 (wait 2.5 seconds)
-    for attempt in range(2):
-        try:
-            response = client.models.generate_content(
-                model=primary_model,
-                contents=formatted_contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    temperature=0.7
-                )
+    try:
+        response = client.models.generate_content(
+            model=primary_model,
+            contents=formatted_contents,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                temperature=0.7
             )
-            coach_reply = response.text
-            break
-        except Exception as e:
-            last_error = e
-            err_str = str(e).lower()
-            if ("503" in err_str or "unavailable" in err_str or "high demand" in err_str) and attempt == 0:
-                print(f"[Coach Engine ⏳] {primary_model} busy (503). Retrying in 2.5 seconds...")
-                time.sleep(2.5)
-                continue
-            break
+        )
+        coach_reply = response.text
+        model_used = primary_model
+    except Exception as e:
+        last_error = e
 
-    # Step B: If primary model is still unavailable on 503, auto-fallback to flash
     if not coach_reply and primary_model != fallback_model:
         err_str = str(last_error).lower() if last_error else ""
         if "503" in err_str or "unavailable" in err_str or "high demand" in err_str:
-            print(f"[Coach Engine 🔄] Falling back to {fallback_model} to avoid downtime...")
+            print(f"[Coach Engine 🔄] Falling back to {fallback_model} after primary model congestion...")
             try:
                 response = client.models.generate_content(
                     model=fallback_model,
@@ -114,16 +106,20 @@ def ask_coach(user_message: str) -> str:
                     )
                 )
                 coach_reply = response.text
+                model_used = fallback_model
             except Exception as e:
                 last_error = e
 
     # 5. Persist only successful coach replies to MongoDB
     if coach_reply:
         save_message(role="user", content=user_message)
-        save_message(role="assistant", content=coach_reply)
+        save_message(role="assistant", content=coach_reply, model=model_used)
         # 6. Trigger Scribe Agent in background
         threading.Thread(target=run_scribe_extraction, args=(user_message,), daemon=True).start()
-        return coach_reply
+        return coach_reply, model_used
     else:
         # Return error message to user, but DO NOT save it to MongoDB
-        return f"❌ Temporary Google Server Congestion (503). Please try sending your message again in a moment. ({last_error})"
+        return (
+            f"❌ Temporary Google Server Congestion (503). Please try sending your message again in a moment. ({last_error})",
+            None,
+        )

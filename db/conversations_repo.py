@@ -4,7 +4,7 @@ from .client import get_db
 def get_conversations_collection():
     return get_db()["conversations"]
 
-def save_message(role, content):
+def save_message(role, content, model=None):
     """Saves a single turn (user or assistant) to MongoDB."""
     col = get_conversations_collection()
     doc = {
@@ -12,6 +12,8 @@ def save_message(role, content):
         "content": content,
         "timestamp": datetime.datetime.now(datetime.timezone.utc)
     }
+    if model is not None:
+        doc["model"] = model
     col.insert_one(doc)
     return doc
 

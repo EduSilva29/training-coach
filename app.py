@@ -118,7 +118,7 @@ with st.sidebar:
 
 # 3. Main Area: Chat Interface
 st.title("💬 Chat with Your Coach")
-st.caption("Powered by Garmin Connect Biometrics + Google Gemini Flash (100% Free)")
+st.caption("Powered by Garmin Connect biometrics + Google Gemini")
 
 # Load persistent conversation history from MongoDB (Last 100 messages)
 db_messages = get_chat_history(limit=100)
@@ -134,6 +134,8 @@ if not db_messages:
 for msg in db_messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
+        if msg.get("model"):
+            st.caption(f"Model: {msg['model']}")
 
 # User Chat Input Box
 if user_prompt := st.chat_input("Ask your coach (e.g., 'What should my workout be today?' or 'How is my weekly mileage?')..."):
@@ -144,5 +146,7 @@ if user_prompt := st.chat_input("Ask your coach (e.g., 'What should my workout b
     # Generate coach response
     with st.chat_message("assistant"):
         with st.spinner("Analyzing your fatigue, HR zones, and training history..."):
-            reply = ask_coach(user_prompt)
+            reply, model = ask_coach(user_prompt)
             st.markdown(reply)
+            if model:
+                st.caption(f"Model: {model}")
