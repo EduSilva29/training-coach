@@ -1,65 +1,116 @@
-import json
+from datetime import date, datetime, timedelta
+
+
+def _activity_date(value):
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).date()
+        except ValueError:
+            return None
+    return None
+
+
+def _is_cycling(metadata):
+    sport = metadata.get("sport_category") or ""
+    activity_type = (metadata.get("activity_type") or "").lower()
+    return sport == "cycling" or "cycl" in activity_type or "bike" in activity_type
+
 
 def format_activities_for_prompt(activities):
-    """Formats up to 30 activities into a rich chronological training log, distinguishing running vs. cycling."""
+    """Formats five weeks of activity trends plus a few recent workout details."""
     if not activities:
         return "No recent activities recorded in the database yet."
 
-    # Separate running vs. cross-training volume
-    runs = [a for a in activities if a.get("metadata", {}).get("sport_category") == "running" or "run" in a.get("metadata", {}).get("activity_type", "")]
-    bikes = [a for a in activities if a.get("metadata", {}).get("sport_category") == "cycling" or "cycl" in a.get("metadata", {}).get("activity_type", "") or "bike" in a.get("metadata", {}).get("activity_type", "")]
-
-    run_km = round(sum(a.get("metadata", {}).get("total_distance_km", 0) for a in runs), 1)
-    bike_km = round(sum(a.get("metadata", {}).get("total_distance_km", 0) for a in bikes), 1)
-
-    lines = [
-        f"TOTAL TRAINING VOLUME (Across last {len(activities)} activities):",
-        f"- 🏃 Running Volume: {run_km} km ({len(runs)} runs)",
-        f"- 🚴 Cross-Training (Indoor Bike / Cycling): {bike_km} km ({len(bikes)} sessions)",
-        "",
-        "--- ACTIVITIES LOG (Newest to Oldest) ---"
-    ]
+    today = date.today()
+    current_week = today - timedelta(days=today.weekday())
+    first_week = current_week - timedelta(weeks=4)
+    weeks = {}
+    recent = []
 
     for act in activities:
         meta = act.get("metadata", {})
-        date_str = (meta.get("start_time") or "Unknown date")[:10]
-        name = meta.get("activity_name", "Activity")
-        dist = meta.get("total_distance_km", 0)
-        duration = meta.get("duration_formatted", "--:--")
-        avg_hr = meta.get("average_hr", "--")
-        is_cycling = meta.get("sport_category") == "cycling" or "cycl" in meta.get("activity_type", "") or "bike" in meta.get("activity_type", "")
+        activity_date = _activity_date(meta.get("start_time"))
+        if activity_date is None or activity_date > today:
+            continue
 
-        # Sport label and sport-specific metrics
-        if is_cycling:
-            tag = "[CROSS-TRAIN / BIKE]"
-            speed_val = meta.get("speed_kmh", 0)
-            power_val = meta.get("average_power_watts")
-            cadence_val = meta.get("cadence")
-            perf_str = f"Speed: {speed_val} km/h"
-            if power_val:
-                perf_str += f", Avg Power: {power_val}W"
-            if cadence_val:
-                perf_str += f", Cadence: {cadence_val} rpm"
+        week_start = activity_date - timedelta(days=activity_date.weekday())
+        if week_start < first_week:
+            continue
+
+        weekly = weeks.setdefault(week_start, {
+            "run_distance": 0.0,
+            "run_count": 0,
+            "longest_run": 0.0,
+            "high_intensity_seconds": 0.0,
+            "bike_count": 0,
+            "bike_duration_seconds": 0.0,
+        })
+        distance = meta.get("total_distance_km") or 0
+        duration = meta.get("duration_seconds") or 0
+
+        if _is_cycling(meta):
+            weekly["bike_count"] += 1
+            weekly["bike_duration_seconds"] += duration
         else:
-            tag = "[RUN]"
-            pace_val = meta.get("average_pace_min_km", "--:--")
-            cadence_val = meta.get("cadence")
-            perf_str = f"Pace: {pace_val}/km"
-            if cadence_val:
-                perf_str += f", Cadence: {cadence_val} spm"
+            weekly["run_count"] += 1
+            weekly["run_distance"] += distance
+            weekly["longest_run"] = max(weekly["longest_run"], distance)
+            high_zone_share = sum(
+                zone.get("percentage", 0)
+                for zone in meta.get("hr_zones", [])
+                if (zone.get("zone") or 0) >= 4
+            )
+            weekly["high_intensity_seconds"] += duration * high_zone_share / 100
 
-        # Dominant HR zone
-        zones = meta.get("hr_zones", [])
-        top_zone_str = ""
-        if zones:
-            top_z = max(zones, key=lambda z: z.get("percentage", 0))
-            if top_z.get("percentage", 0) > 0:
-                top_zone_str = f" | Top: Zone {top_z.get('zone')} ({top_z.get('percentage')}%)"
+        recent.append((activity_date, act))
 
-        lines.append(f"- [{date_str}] {tag} {name}: {dist}km in {duration} ({perf_str}, Avg HR: {avg_hr} bpm{top_zone_str})")
-        if act.get("llm_summary"):
-            lines.append(f"  Summary: {act['llm_summary']}")
-    
+    lines = ["--- WEEKLY TRAINING TREND (Five ISO weeks; bike kept separate from running) ---"]
+    for week_start in (first_week + timedelta(weeks=i) for i in range(5)):
+        weekly = weeks.get(week_start)
+        if weekly is None:
+            summary = "No activities recorded"
+        elif weekly["run_count"] == 0:
+            summary = (
+                f"Run 0.0 km/0 runs | Bike {weekly['bike_count']} sessions/"
+                f"{round(weekly['bike_duration_seconds'] / 60)} min"
+            )
+        else:
+            run_summary = (
+                f"Run {weekly['run_distance']:.1f} km/{weekly['run_count']} "
+                f"(longest {weekly['longest_run']:.1f} km; "
+                f"Z4-5 ~{round(weekly['high_intensity_seconds'] / 60)} min)"
+            )
+            bike_summary = f"Bike {weekly['bike_count']} sessions/{round(weekly['bike_duration_seconds'] / 60)} min"
+            summary = f"{run_summary} | {bike_summary}"
+        week_label = "current week to date" if week_start == current_week else f"week of {week_start.isoformat()}"
+        lines.append(f"- [{week_label}] {summary}")
+
+    lines.extend(["", "--- RECENT WORKOUTS (Up to 5; no duplicated summaries) ---"])
+    for activity_date, act in sorted(recent, key=lambda item: item[0], reverse=True)[:5]:
+        meta = act.get("metadata", {})
+        distance = meta.get("total_distance_km") or 0
+        duration = meta.get("duration_formatted", "--")
+        avg_hr = meta.get("average_hr")
+        hr_text = f", avg HR {avg_hr} bpm" if avg_hr else ""
+
+        if _is_cycling(meta):
+            details = f"{distance:g} km, {duration}, {meta.get('speed_kmh', 0)} km/h"
+            power = meta.get("average_power_watts")
+            if power:
+                details += f", {power} W"
+            label = "Bike"
+        else:
+            pace = meta.get("average_pace_min_km", "--")
+            details = f"{distance:g} km, {duration}, {pace}/km"
+            label = "Run"
+
+        name = meta.get("activity_name", "Workout")
+        lines.append(f"- [{activity_date.isoformat()}] {label} {name}: {details}{hr_text}")
+
     return "\n".join(lines)
 
 def format_recovery_for_prompt(recovery_input):
@@ -146,13 +197,13 @@ ATHLETE PROFILE & OBJECTIVES:
 RECOVERY & BIOMETRICS (Today + 30-Day Trends):
 {recovery_text}
 
-GARMIN ACTIVITIES LOG (Up to Last 30 Workouts):
+GARMIN TRAINING HISTORY (Five-week trend + recent workout detail):
 {activities_text}
 
 COACHING GUIDELINES:
-1. Multi-week trend analysis: Use the 30-day activity log and biometric recovery history to assess acute vs. chronic training load (ACWR), overall weekly mileage progression, and resting heart rate baseline shifts.
+1. Compare completed weeks' running distance, long-run distance, and Zone 4/5 time to discuss training trends. The current week is incomplete; do not compare it directly with full weeks or claim a precise ACWR from these summaries.
 2. Factor in fatigue & autonomic stress: If HRV is low or sleep has been consistently poor over recent days, recommend dialing back intensity or inserting a recovery run.
-3. Monitor training load: Be mindful of sudden mileage jumps (the 10% rule) and excessive high-intensity time in Zones 4/5.
+3. Monitor training load: Notice sudden mileage jumps and excessive high-intensity time in Zones 4/5; treat the 10% rule as a heuristic, not a strict cutoff.
 4. Calibrate workouts to their Personal Bests: Use their 5K, 10K, or Half Marathon PBs to prescribe accurate training paces (e.g. threshold pace, VO2 max interval pace, and true easy/recovery pace).
 5. Be conversational and direct: Do not produce giant walls of generic text. Give direct answers with specific recommendations (e.g. target paces, heart rate zones, distances, or rest instructions).
 6. Reference their actual metrics: Mention their real runs, recent paces, and recovery scores when explaining the "why" behind your advice.
