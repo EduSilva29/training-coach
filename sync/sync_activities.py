@@ -108,15 +108,11 @@ def process_activity(api, activity_data):
     duration_sec = activity_data.get("duration", 0)
     avg_speed = activity_data.get("averageSpeed", 0)
 
-    # Power metrics (indoor smart trainer or power pedals)
-    avg_power = round(activity_data.get("averagePower", 0)) or None
-    max_power = round(activity_data.get("maxPower", 0)) or None
-
     # Cadence (spm for running, rpm for cycling)
     if is_cycling:
         cadence = round(activity_data.get("averageBikingCadenceInRevPerMinute") or activity_data.get("averageCadence", 0)) or None
     else:
-        cadence = round(activity_data.get("averageRunCadence", 0)) or None
+        cadence = round(activity_data.get("averageRunningCadenceInStepsPerMinute", 0)) or None
     
     metadata = {
         "activity_name": activity_data.get("activityName", "Workout"),
@@ -128,8 +124,8 @@ def process_activity(api, activity_data):
         "duration_seconds": duration_sec,
         "average_pace_min_km": speed_to_pace(avg_speed) if not is_cycling else None,
         "speed_kmh": speed_to_kmh(avg_speed),
-        "average_power_watts": avg_power,
-        "max_power_watts": max_power,
+        "average_power_watts": round(activity_data.get("avgPower", 0)) or None,
+        "max_power_watts": round(activity_data.get("maxPower", 0)) or None,
         "cadence": cadence,
         "average_hr": round(activity_data.get("averageHR", 0)) or None,
         "max_hr": round(activity_data.get("maxHR", 0)) or None,
