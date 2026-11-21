@@ -1,5 +1,6 @@
 import streamlit as st
 import datetime
+from auth import require_login
 from db import (
     get_chat_history,
     clear_chat_history,
@@ -16,9 +17,15 @@ st.set_page_config(
     layout="wide"
 )
 
+# Keep all app data and integrations behind the login gate.
+require_login()
+
 # 2. Sidebar: Biometrics & Athlete Profile
 with st.sidebar:
     st.title("🏃 Coach's Corner")
+    if st.button("Log out"):
+        st.session_state["authenticated"] = False
+        st.rerun()
     
     # Section A: Today's Biometric Recovery
     st.subheader("📊 Today's Readiness")

@@ -2,6 +2,7 @@ import os
 import threading
 from typing import Optional, Tuple
 from dotenv import load_dotenv
+from config import get_setting
 
 # Clean package imports: We talk to the 'db' package front door
 from db import (
@@ -20,7 +21,7 @@ load_dotenv()
 
 def get_gemini_client():
     """Initializes Google GenAI client."""
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = get_setting("GEMINI_API_KEY")
     if not api_key:
         return None
     try:
@@ -34,7 +35,7 @@ def ask_coach(user_message: str) -> Tuple[str, Optional[str]]:
     Main entry point for talking to the AI coach.
     Falls back to a backup model if Google experiences a 503 high-demand spike.
     """
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = get_setting("GEMINI_API_KEY")
     if not api_key:
         fallback_msg = (
             "⚠️ **Gemini API Key is missing!**\n\n"
@@ -71,7 +72,7 @@ def ask_coach(user_message: str) -> Tuple[str, Optional[str]]:
     from google.genai import types
 
     client = genai.Client(api_key=api_key)
-    primary_model = os.getenv("GEMINI_MODEL", "gemini-4-hydrogen")
+    primary_model = get_setting("GEMINI_MODEL", "gemini-4-hydrogen")
     fallback_model = "gemini-3.8-flash"
 
     coach_reply = None

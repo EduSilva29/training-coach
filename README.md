@@ -68,6 +68,18 @@ python sync/sync_recovery.py
 ```bash
 streamlit run app.py
 ```
+The app requires a login. For local use, create `.streamlit/secrets.toml` (this file
+is ignored by Git) and add:
+```toml
+[auth]
+username = "your_username"
+password = "a_long_unique_password"
+```
+
+Add your `MONGO_URI` and `GEMINI_API_KEY` to the same file as top-level settings,
+or keep using your `.env` file. Environment variables take precedence over Streamlit
+secrets.
+
 The coach tries the configured `GEMINI_MODEL` first (default: `gemini-4-hydrogen`). If
 that model is congested, it immediately tries `gemini-3.8-flash`; the UI displays the
 model used for each response.
@@ -87,9 +99,15 @@ model used for each response.
 - Connect your GitHub repo and select `app.py`.
 - In **App Settings > Secrets**, paste your `.env` variables:
   ```toml
-  GARMIN_EMAIL = "your_email"
-  GARMIN_PASSWORD = "your_password"
   MONGO_URI = "mongodb+srv://..."
   GEMINI_API_KEY = "AIzaSy..."
+
+  [auth]
+  username = "your_username"
+  password = "a_long_unique_password"
   ```
+- Keep `GARMIN_EMAIL` and `GARMIN_PASSWORD` only in GitHub Actions secrets for the
+  daily sync; the Streamlit app does not need them.
+- Use a unique, strong password. The app checks it on every new Streamlit session;
+  selecting **Log out** ends the current session.
 - Deploy! You will have a permanent, free URL to talk to your coach on your phone or laptop.

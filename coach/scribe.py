@@ -1,6 +1,7 @@
 import os
 import json
 from dotenv import load_dotenv
+from config import get_setting
 from db import get_athlete_profile, update_athlete_profile
 
 load_dotenv()
@@ -37,7 +38,7 @@ def run_scribe_extraction(user_message: str):
     Background worker agent that analyzes the athlete's message and
     automatically persists new profile facts to MongoDB.
     """
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = get_setting("GEMINI_API_KEY")
     if not api_key:
         return
 
@@ -61,7 +62,7 @@ ATHLETE'S NEW MESSAGE:
 """
 
         # Read model from .env (honors GEMINI_MODEL, with optional GEMINI_SCRIBE_MODEL override)
-        model_name = os.getenv("GEMINI_SCRIBE_MODEL") or os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+        model_name = get_setting("GEMINI_SCRIBE_MODEL") or get_setting("GEMINI_MODEL", "gemini-3.8-flash")
 
         # Call Gemini to extract memory with guaranteed JSON output
         response = client.models.generate_content(
