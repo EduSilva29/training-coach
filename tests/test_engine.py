@@ -34,20 +34,30 @@ class AskCoachTests(unittest.TestCase):
         for patcher in reversed(self.patches):
             patcher.stop()
 
-    def test_busy_models_do_not_persist_user_message(self):
+    def test_busy_models_are_retried_and_do_not_persist_user_message(self):
         self.client.models.generate_content.side_effect = [
+            RuntimeError("503 unavailable"),
+            RuntimeError("503 unavailable"),
+            RuntimeError("503 unavailable"),
+            RuntimeError("503 unavailable"),
             RuntimeError("503 unavailable"),
             RuntimeError("503 unavailable"),
         ]
 
-        with patch("builtins.print"), patch.object(engine, "save_message") as save_message:
+        with patch("builtins.print"), patch.object(engine.time, "sleep") as sleep, patch.object(
+            engine, "save_message"
+        ) as save_message:
             result, model = engine.ask_coach("What should I run today?")
 
         save_message.assert_not_called()
         self.assertIsNone(model)
         self.assertEqual(
             [call.kwargs["model"] for call in self.client.models.generate_content.call_args_list],
-            ["primary-model", "gemini-3.8-flash"],
+            ["primary-model"] * 3 + ["gemini-3.6-flash"] * 3,
+        )
+        self.assertEqual(
+            [call.args[0] for call in sleep.call_args_list[-4:]],
+            [1, 2, 1, 2],
         )
         self.get_chat_history.assert_called_once_with(limit=49)
         contents = self.client.models.generate_content.call_args_list[0].kwargs["contents"]
@@ -71,23 +81,74 @@ class AskCoachTests(unittest.TestCase):
             call(role="assistant", content="Coach reply", model="primary-model"),
         ])
 
-    def test_congested_primary_uses_backup_without_retrying_primary(self):
+    def test_congested_primary_retries_then_uses_backup(self):
         self.client.models.generate_content.side_effect = [
+            RuntimeError("503 unavailable"),
+            RuntimeError("503 unavailable"),
             RuntimeError("503 unavailable"),
             SimpleNamespace(text="Backup reply"),
         ]
 
-        with patch("builtins.print"), patch.object(engine, "save_message") as save_message:
+        with patch("builtins.print"), patch.object(engine.time, "sleep"), patch.object(
+            engine, "save_message"
+        ) as save_message:
             result = engine.ask_coach("What should I run today?")
 
-        self.assertEqual(result, ("Backup reply", "gemini-3.8-flash"))
+        self.assertEqual(result, ("Backup reply", "gemini-3.6-flash"))
         self.assertEqual(
             [call.kwargs["model"] for call in self.client.models.generate_content.call_args_list],
-            ["primary-model", "gemini-3.8-flash"],
+            ["primary-model"] * 3 + ["gemini-3.6-flash"],
         )
         self.assertEqual(
             save_message.call_args_list[-1],
-            call(role="assistant", content="Backup reply", model="gemini-3.8-flash"),
+            call(role="assistant", content="Backup reply", model="gemini-3.6-flash"),
+        )
+
+    def test_congested_primary_can_succeed_on_retry(self):
+        self.client.models.generate_content.side_effect = [
+            RuntimeError("503 unavailable"),
+            SimpleNamespace(text="Recovered reply"),
+        ]
+
+        with patch("builtins.print"), patch.object(engine.time, "sleep") as sleep, patch.object(
+            engine, "save_message"
+        ):
+            result = engine.ask_coach("What should I run today?")
+
+        self.assertEqual(result, ("Recovered reply", "primary-model"))
+        self.assertEqual(
+            [call.kwargs["model"] for call in self.client.models.generate_content.call_args_list],
+            ["primary-model", "primary-model"],
+        )
+        sleep.assert_called_once_with(1)
+
+    def test_fallback_models_are_tried_in_configured_order(self):
+        self.client.models.generate_content.side_effect = [
+            RuntimeError("503 unavailable"),
+            RuntimeError("503 unavailable"),
+            RuntimeError("503 unavailable"),
+            RuntimeError("503 unavailable"),
+            RuntimeError("503 unavailable"),
+            RuntimeError("503 unavailable"),
+            SimpleNamespace(text="Third model reply"),
+        ]
+
+        with patch.dict(
+            os.environ,
+            {
+                "GEMINI_FALLBACK_MODELS": (
+                    "primary-model, backup-one, backup-two, backup-one"
+                )
+            },
+        ), patch("builtins.print"), patch.object(engine.time, "sleep"), patch.object(
+            engine, "save_message"
+        ):
+            result = engine.ask_coach("What should I run today?")
+
+        self.assertEqual(result, ("Third model reply", "backup-two"))
+        self.assertEqual(
+            [call.kwargs["model"] for call in self.client.models.generate_content.call_args_list],
+            ["primary-model"] * 3 + ["backup-one"] * 3 + ["backup-two"],
         )
 
 

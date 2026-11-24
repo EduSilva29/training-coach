@@ -3,7 +3,7 @@ name: Daily Garmin Sync
 on:
   schedule:
     # Runs everyday at 12:13 UTC (off hours to avoid peak load on Github servers)
-    - cron: '13 12 * * *'
+    - cron: '13 09 * * *'
   workflow_dispatch: # Allows manual trigger from GitHub UI
 
 permissions:

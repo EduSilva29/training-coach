@@ -80,9 +80,13 @@ Add your `MONGO_URI` and `GEMINI_API_KEY` to the same file as top-level settings
 or keep using your `.env` file. Environment variables take precedence over Streamlit
 secrets.
 
-The coach tries the configured `GEMINI_MODEL` first (default: `gemini-4-hydrogen`). If
-that model is congested, it immediately tries `gemini-3.8-flash`; the UI displays the
-model used for each response.
+The coach tries the configured `GEMINI_MODEL` first (default: `gemini-4-hydrogen`).
+For temporary congestion (503), it makes up to three attempts per model, waiting 1
+then 2 seconds between attempts, before moving on to the next fallback. Set
+`GEMINI_FALLBACK_MODELS` to a comma-separated list to choose the fallback order, for
+example `gemini-3.6-flash,gemini-2.5-flash`. If unset, it defaults to
+`gemini-3.6-flash`. The primary model and duplicate fallback names are skipped. The
+UI displays the model used for each response.
 
 ---
 

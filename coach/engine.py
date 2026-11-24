@@ -1,5 +1,6 @@
 import os
 import threading
+import time
 from typing import Optional, Tuple
 from dotenv import load_dotenv
 from config import get_setting
@@ -17,7 +18,55 @@ from db import (
 from .prompts import build_coach_system_instruction
 from .scribe import run_scribe_extraction
 
+GENERATION_ATTEMPTS = 3
+
 load_dotenv()
+
+
+def _is_congestion_error(error: Exception) -> bool:
+    if getattr(error, "code", None) == 503:
+        return True
+    err_str = str(error).lower()
+    return "503" in err_str or "unavailable" in err_str or "high demand" in err_str
+
+
+def _generate_content_with_retries(client, model, contents, system_instruction):
+    from google.genai import types
+
+    for attempt in range(GENERATION_ATTEMPTS):
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    temperature=0.7
+                )
+            )
+            return response.text
+        except Exception as error:
+            if not _is_congestion_error(error) or attempt == GENERATION_ATTEMPTS - 1:
+                raise
+            delay = 2 ** attempt
+            print(
+                f"[Coach Engine ⏳] {model} is congested; "
+                f"retrying in {delay} seconds..."
+            )
+            time.sleep(delay)
+
+
+def _get_fallback_models(primary_model):
+    configured_models = get_setting("GEMINI_FALLBACK_MODELS")
+    if configured_models is None:
+        configured_models = "gemini-3.8-flash"
+
+    fallback_models = []
+    for model in configured_models.split(","):
+        model = model.strip()
+        if model and model != primary_model and model not in fallback_models:
+            fallback_models.append(model)
+    return fallback_models
+
 
 def get_gemini_client():
     """Initializes Google GenAI client."""
@@ -33,7 +82,7 @@ def get_gemini_client():
 def ask_coach(user_message: str) -> Tuple[str, Optional[str]]:
     """
     Main entry point for talking to the AI coach.
-    Falls back to a backup model if Google experiences a 503 high-demand spike.
+    Tries fallback models if Google experiences a 503 high-demand spike.
     """
     api_key = get_setting("GEMINI_API_KEY")
     if not api_key:
@@ -67,49 +116,33 @@ def ask_coach(user_message: str) -> Tuple[str, Optional[str]]:
 
     formatted_contents.append({"role": "user", "parts": [{"text": user_message}]})
 
-    # 4. Call Gemini, falling back immediately if the primary model is congested
+    # 4. Retry congestion briefly, then try configured fallback models in order
     from google import genai
-    from google.genai import types
 
     client = genai.Client(api_key=api_key)
     primary_model = get_setting("GEMINI_MODEL", "gemini-4-hydrogen")
-    fallback_model = "gemini-3.8-flash"
+    fallback_models = _get_fallback_models(primary_model)
 
     coach_reply = None
     model_used = None
     last_error = None
 
-    try:
-        response = client.models.generate_content(
-            model=primary_model,
-            contents=formatted_contents,
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                temperature=0.7
+    models = [primary_model] + fallback_models
+    for index, model in enumerate(models):
+        try:
+            coach_reply = _generate_content_with_retries(
+                client, model, formatted_contents, system_instruction
             )
-        )
-        coach_reply = response.text
-        model_used = primary_model
-    except Exception as e:
-        last_error = e
-
-    if not coach_reply and primary_model != fallback_model:
-        err_str = str(last_error).lower() if last_error else ""
-        if "503" in err_str or "unavailable" in err_str or "high demand" in err_str:
-            print(f"[Coach Engine 🔄] Falling back to {fallback_model} after primary model congestion...")
-            try:
-                response = client.models.generate_content(
-                    model=fallback_model,
-                    contents=formatted_contents,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system_instruction,
-                        temperature=0.7
-                    )
-                )
-                coach_reply = response.text
-                model_used = fallback_model
-            except Exception as e:
-                last_error = e
+            if coach_reply:
+                model_used = model
+            break
+        except Exception as e:
+            last_error = e
+            if not _is_congestion_error(e):
+                break
+            if index + 1 == len(models):
+                break
+            print(f"[Coach Engine 🔄] {model} is congested; moving to the next model...")
 
     # 5. Persist only successful coach replies to MongoDB
     if coach_reply:
